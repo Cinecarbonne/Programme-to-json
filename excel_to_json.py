@@ -19,7 +19,7 @@ import pandas as pd
 
 # Emplacements
 IN_XLSX  = Path("work/enriched.xlsx")
-OUT_JSON = Path("public/data/programme_struct_enrichi.json")
+OUT_JSON = Path("public/data/programme.json")
 
 # Champs exportés (garde l’ordre)
 FIELDS_TO_KEEP = [
