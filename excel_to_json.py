@@ -2,20 +2,25 @@
 # -*- coding: utf-8 -*-
 
 """
-excel_to_json.py — Convertit work/enriched.xlsx vers public/data/programme_struct_enrichi.json
-- JSON trié chronologiquement (datetime_local sinon date+heure)
-- Pas de purge par défaut (pas de suppression des séances passées)
-- Clé robuste: datetime_local OU date|heure|titre + version + tmdb_id
-- Champs exportés: compatibles avec ton HTML (prix, tarif, commentaire, backdrops, etc.)
-- FIX: la colonne "prix" est acceptée quelle que soit sa casse ("Prix", "PRIX") et
-       les alias "recompense(s)", "récompense(s)" sont aussi supportés.
+excel_to_json.py — Convertit work/enriched.xlsx vers public/data/programme.json
+
+- Import incrémental robuste :
+  1) Charge le JSON existant et NE GARDE QUE les séances dont la date >= aujourd'hui (heure ignorée).
+  2) Ajoute TOUTES les lignes de l'Excel sans filtrage, en écrasant sur collision de clé.
+  3) Trie chronologiquement et écrit le JSON final.
+
+- Clé robuste anti-collisions : datetime_local OU (date|heure|titre) + version + tmdb_id
+- Champs exportés : compatibles avec le site (tarif, prix, commentaire, backdrops, etc.)
+- FIX : la colonne "prix" est acceptée quelle que soit sa casse ("Prix", "PRIX") et
+        les alias "recompense(s)", "récompense(s)" sont aussi supportés.
+- Parsing date/heure déterministe (ISO prioritaire, puis DD/MM/YYYY), pour éviter inversions jour/mois.
 """
 
 import json
 from pathlib import Path
 from datetime import datetime
-import argparse
 import pandas as pd
+import re
 
 # Emplacements
 IN_XLSX  = Path("work/enriched.xlsx")
@@ -29,7 +34,8 @@ FIELDS_TO_KEEP = [
     "tarif","prix","categorie","commentaire",
     "synopsis","affiche_url","backdrop_url","backdrops",
     "trailer_url","tmdb_id","imdb_id",
-    "allocine_url"]
+    "allocine_url"
+]
 
 PRIX_ALIASES = ["prix", "recompense", "recompenses", "récompense", "récompenses"]
 
@@ -42,8 +48,6 @@ def safe_str(x):
     except Exception:
         pass
     return str(x)
-
-import re
 
 ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 ISO_DT   = re.compile(r"^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?$")
@@ -64,7 +68,7 @@ def parse_dt(obj: dict):
             if pd.isna(dt):
                 dt = pd.to_datetime(dl, dayfirst=False, errors="coerce")
             return None if pd.isna(dt) else dt
-        # Fallback (historique)
+        # Fallback (historique / tolérant)
         dt = pd.to_datetime(dl, dayfirst=True, errors="coerce")
         return None if pd.isna(dt) else dt
 
@@ -87,6 +91,7 @@ def parse_dt(obj: dict):
     # Dernier recours (tolérant mais moins déterministe)
     dt = pd.to_datetime(f"{d} {h}", dayfirst=True, errors="coerce")
     return None if pd.isna(dt) else dt
+
 def base_key(obj: dict) -> str:
     """
     Clé de base: dl|{datetime_local} sinon dht|{date}|{heure}|{titre-lc}
@@ -174,7 +179,7 @@ def row_to_obj(r: pd.Series) -> dict:
 def drop_past(items: list, mode: str) -> list:
     """
     Supprime les séances passées si demandé.
-    mode = 'date' (date<aujourd'hui) ou 'datetime' (dt<maintenant).
+    mode = 'date' (date < aujourd'hui) ou 'datetime' (dt < maintenant).
     """
     now = pd.Timestamp.now()
     today = now.normalize().date()
@@ -193,48 +198,39 @@ def drop_past(items: list, mode: str) -> list:
     return kept
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--merge-existing", action="store_true",
-                    help="Fusionner avec le JSON existant (sinon on repart uniquement de l'Excel).")
-    ap.add_argument("--prune-mode", choices=["none","date","datetime"], default="none",
-                    help="Suppression des séances passées: none (défaut), date (< aujourd'hui), datetime (< maintenant).")
-    args = ap.parse_args()
-
-    # Base = Excel enrichi
+    # 0) Charger l’Excel (obligatoire)
     if not IN_XLSX.exists():
         raise SystemExit(f"[ERREUR] {IN_XLSX} introuvable.")
     df = pd.read_excel(IN_XLSX, sheet_name=0, dtype=str).fillna("")
 
     merged: dict[str, dict] = {}
 
-    # Optionnel: partir du JSON existant
-    if args.merge_existing:
-        for x in load_existing():
-            merged[ make_key(x) ] = x
+    # 1) Charger l'existant et NE GARDER QUE les séances dont la date >= aujourd'hui (heure ignorée)
+    existing = load_existing()
+    if existing:
+        for x in drop_past(existing, mode="date"):
+            merged[make_key(x)] = x
 
-    # Ajoute/remplace avec l'Excel
+    # 2) Ajouter / écraser avec l'Excel (on ne filtre PAS l'Excel)
     for _, r in df.iterrows():
         obj = row_to_obj(r)
-        merged[ make_key(obj) ] = obj
+        merged[make_key(obj)] = obj
 
     items = list(merged.values())
 
-    # Purge éventuelle (par défaut: none)
-    if args.prune_mode != "none":
-        items = drop_past(items, mode=args.prune_mode)
-
-    # Tri chronologique
+    # 3) Tri chronologique (les items sans date parsable partent à la fin)
     def sort_key(o):
         dt = parse_dt(o)
-        return dt.to_pydatetime() if dt is not None else datetime(9999,1,1)
+        return dt.to_pydatetime() if dt is not None else datetime(9999, 1, 1)
     items.sort(key=sort_key)
 
+    # 4) Écriture
     OUT_JSON.parent.mkdir(parents=True, exist_ok=True)
     with open(OUT_JSON, "w", encoding="utf-8") as f:
         json.dump(items, f, ensure_ascii=False, indent=2)
 
     print(f"[done] écrit: {OUT_JSON}  ({len(items)} séances)")
-    print(f"[info] options: merge_existing={args.merge_existing} prune_mode={args.prune_mode}")
+    print("[info] logique: (existant filtré aux >= aujourd'hui) + Excel (écrase sur même clé) ; tri chronologique")
 
 if __name__ == "__main__":
     main()
