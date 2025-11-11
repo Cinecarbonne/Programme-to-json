@@ -37,6 +37,8 @@ IMG_W500 = "https://image.tmdb.org/t/p/w500"
 IMG_W780 = "https://image.tmdb.org/t/p/w780"
 IMG_ORIG = "https://image.tmdb.org/t/p/original"
 
+mode_Gui=False
+
 OUTPUT_ENRICH_COLS = [
     "datetime_local",
     "date",
@@ -245,7 +247,10 @@ def auto_pick_or_prompt(cands, title, _unused, auto_margin, *,
         if (s1 - s2) >= auto_margin:
             return ordered[0]
 
+
     # --- liste interactive ---
+    if mode_Gui :
+        print("TBD VBE => manage selection in GUI")
     short = ordered[:10]
     top_for_directors = short[:5]
     directors = {}
@@ -368,13 +373,18 @@ def enrich_row(row, args, force_prompt=False):
     return row
 
 
-def main():
+def main(gui_mode=False):
     p = argparse.ArgumentParser()
     p.add_argument("--in", dest="in_xlsx", default="normalized.xlsx")
     p.add_argument("--out", dest="out_xlsx", default="enriched.xlsx")
     p.add_argument("--lang", dest="lang", default=LANG_DEFAULT)
     p.add_argument("--auto-margin", dest="auto_margin", type=float, default=4.0)
     args = p.parse_args()
+
+    # positionnement de mode_GUI afin de gérer  la selection des films
+    global  mode_Gui
+    mode_Gui=gui_mode
+
 
     root = Path(__file__).resolve().parent
     work = root / "work"
