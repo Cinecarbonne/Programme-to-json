@@ -25,6 +25,8 @@ import pandas as pd
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+import  tkinter as tk
+from tkinter import ttk as ttk
 
 
 # ---------- Constantes ----------
@@ -38,6 +40,7 @@ IMG_W780 = "https://image.tmdb.org/t/p/w780"
 IMG_ORIG = "https://image.tmdb.org/t/p/original"
 
 mode_Gui=False
+window=None
 
 OUTPUT_ENRICH_COLS = [
     "datetime_local",
@@ -249,8 +252,6 @@ def auto_pick_or_prompt(cands, title, _unused, auto_margin, *,
 
 
     # --- liste interactive ---
-    if mode_Gui :
-        print("TBD VBE => manage selection in GUI")
     short = ordered[:10]
     top_for_directors = short[:5]
     directors = {}
@@ -263,8 +264,10 @@ def auto_pick_or_prompt(cands, title, _unused, auto_margin, *,
                 directors[mid] = fut.result() or ""
             except Exception:
                 directors[mid] = ""
-
-    print("\nPlusieurs correspondances pour:", title)
+    if (not mode_Gui):
+        print("\nPlusieurs correspondances pour:", title)
+    else :
+        choices=[]
     for idx, c in enumerate(short, start=1):
         tit = c.get("title") or c.get("name") or ""
         rd  = c.get("release_date") or ""
@@ -274,17 +277,25 @@ def auto_pick_or_prompt(cands, title, _unused, auto_margin, *,
         mid = int(c.get("id"))
         direc = directors.get(mid, "")
         suffix = f" — {direc}" if direc else ""
-        print(f"  [{idx}] {tit}{suffix} ({yy})  pop={pop:.1f}  sim={sim:.2f}")
-    print("  [0] Aucun / passer")
+        if (not mode_Gui):
+            print(f"  [{idx}] {tit}{suffix} ({yy})  pop={pop:.1f}  sim={sim:.2f}")
+        else :
+            choice_str=f"  [{idx}] {tit}{suffix} ({yy})  pop={pop:.1f}  sim={sim:.2f}"
+            choices.append(choice_str)
 
-    while True:
-        try:
-            choice = int(input("Choix ? [0..9] : ").strip() or "1")
-        except Exception:
-            choice = -1
-        if 0 <= choice <= min(10, len(short)):
-            break
-        print("Entrée invalide.")
+    if (mode_Gui):
+        choice=gui_select_movie(title,choices)
+    else:
+        print("  [0] Aucun / passer")
+
+        while True:
+            try:
+                choice = int(input("Choix ? [0..9] : ").strip() or "1")
+            except Exception:
+                choice = -1
+            if 0 <= choice <= min(10, len(short)):
+                break
+            print("Entrée invalide.")
     if choice == 0:
         return None
     return short[choice - 1]
@@ -314,6 +325,8 @@ def ensure_output_cols(df):
 
 
 def enrich_row(row, args, force_prompt=False):
+    if mode_Gui :
+        window.config(cursor="watch")
     row = row.copy()
     title = (row.get("titre") or row.get("Titre") or "").strip()
     if not title:
@@ -370,10 +383,36 @@ def enrich_row(row, args, force_prompt=False):
     row["duree_min"] = str(details.get("runtime") or "").strip() or row.get("duree_min", "")
     row["synopsis"] = (details_fr or {}).get("overview") or (details_en or {}).get("overview") or row.get("synopsis", "")
     row["trailer_url"] = trailer or row.get("trailer_url", "")
+    if mode_Gui:
+        window.config(cursor="")
     return row
 
+def gui_select_movie(title,choices):
+    global window
+    window.attributes("-topmost", True)
 
-def main(gui_mode=False):
+    new_window = tk.Toplevel(window)
+    new_window.title("selection : %s" %title)
+    hauteur=str(30*len(choices)+20)
+    new_window.geometry("600x%s" %hauteur)
+
+    choice=tk.IntVar(new_window, value = 0  )
+
+    var=1
+    for c in choices:
+        ttk.Radiobutton(new_window, text=c, variable=choice, value=var).pack(fill='x')
+        var+=1
+    tk.Button(new_window, text="Valider/Passer", command=new_window.destroy).pack()
+    #force display
+    window.attributes("-topmost", False)
+    new_window.attributes("-topmost", True)
+    window.update()
+    window.update_idletasks()
+
+    window.wait_window(new_window)
+    return choice.get()
+
+def main(main_window=None):
     p = argparse.ArgumentParser()
     p.add_argument("--in", dest="in_xlsx", default="normalized.xlsx")
     p.add_argument("--out", dest="out_xlsx", default="enriched.xlsx")
@@ -382,11 +421,14 @@ def main(gui_mode=False):
     args = p.parse_args()
 
     # positionnement de mode_GUI afin de gérer  la selection des films
-    global  mode_Gui
-    mode_Gui=gui_mode
+    global  mode_Gui,window
 
-
-    root = Path(__file__).resolve().parent
+    if (main_window ) :
+        mode_Gui=True
+        window=main_window
+        root=Path(os.getcwd())
+    else:
+        root = Path(__file__).resolve().parent
     work = root / "work"
     work.mkdir(parents=True, exist_ok=True)
     in_path = work / args.in_xlsx
