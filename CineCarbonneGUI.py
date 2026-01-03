@@ -1,6 +1,6 @@
 import tkinter
-from tkinter import ttk,scrolledtext,filedialog
-import os,sys
+from tkinter import ttk,filedialog
+import os
 import shutil
 from tkinter.constants import HORIZONTAL
 
@@ -10,13 +10,15 @@ import enrich
 import excel_to_json
 
 TMDB_API_KEY=os.getenv ("TMDB_API_KEY","4b400d47b0a36eed006040846feebaf5")
+
+print("API_KEY: "+os.environ.get("TMDB_API_KEY", "").strip())
 selected_program_file=""
 
 mode_standalone=os.path.isfile("./CineCarbonneGUI.exe")
 
 if mode_standalone :
-    os.makedirs("CineCarbonne", exist_ok=True)
-    os.chdir("CineCarbonne")
+    os.makedirs("CineCarbonne_workdir", exist_ok=True)
+    os.chdir("CineCarbonne_workdir")
 
 INPUT_PATH  = "input/source.xlsx"
 
@@ -45,31 +47,71 @@ def browseFiles():
     # Change label contents
     label_file_explorer.configure(text=selected_program_file)
 
+def error_popup(message):
+    alert_window = tkinter.Toplevel(window)
+    alert_window.title("Erreur")
+    #alert_window.geometry("300x200")
+    x = window.winfo_x()
+    y = window.winfo_y()
+    alert_window.geometry("+%d+%d" % (x+30, y + 70))
+    ttk.Label(alert_window,
+                text= message,
+                style="BW.TLabel").pack()
+    tkinter.Button(alert_window,text="OK", command=alert_window.destroy).pack()
+
+    #force display
+    window.attributes("-topmost", False)
+    alert_window.attributes("-topmost", True)
+    window.update()
+    window.update_idletasks()
+
+    window.wait_window(alert_window)
+
 def convert():
     print(f"Répertoire courant début convert: {os.getcwd()}")
+    continu = True
     if selected_program_file != "":
         print ("Copy selected file to input/source.xlsx")
         shutil.copy(selected_program_file,INPUT_PATH)
     else :
-        print("ATTENTION : pas de fichier d'entrée selectionné le fichier source.xlsx courant sera utilisé si existant!! ")
+        error_popup("ATTENTION : pas de fichier d'entrée selectionné \n"
+                    "=> le fichier input/source.xlsx sera utilisé si existant!! ")
 
-    print(f"Répertoire courant début normalize: {os.getcwd()}")
     if options["normalize"].get():
-     print ("Normalize")
-     normalize.main()
+        print(f"Répertoire courant début normalize: {os.getcwd()}")
+        if os.path.isfile("input/source.xlsx"):
+            print ("Normalize")
+            normalize.main()
+        else :
+            error_popup("le fichier input/source.xlsx n'existe pas\n"
+                        "veuillez sélectionner le fichier programme source à l'aide du bouton prévu a cet effet")
+            continu=False
 
-     if options["enrich"].get():
+
+
+    if continu and options["enrich"].get():
         print(f"Répertoire courant début enrich: {os.getcwd()}")
-        print ("ajout TMDB data witk key %s __" %input_TMDB.get('1.0',"end"))
-        os.environ["TMDB_API_KEY"]=TMDB_API_KEY
-        enrich.main(window)
+        if os.path.isfile("work/normalized.xlsx"):
+            print("ajout TMDB data witk key %s __" % input_TMDB.get('1.0', "end"))
+            os.environ["TMDB_API_KEY"] = TMDB_API_KEY
+            print("API_KEY 2: " + os.environ.get("TMDB_API_KEY", ""))
+            enrich.main(window)
+        else :
+            error_popup("le fichier work/normalized.xlsx n'existe pas\n/"
+                        "veuillez sélectionner  l'option 'normalize' dans l'interface")
+            continu=False
 
-    if options["export"].get():
-        print ("convert to json")
-        excel_to_json.main()
+    if continu and options["export"].get():
+        print(f"Répertoire courant début export: {os.getcwd()}")
+        if os.path.isfile("work/enriched.xlsx"):
+            print ("convert to json")
+            excel_to_json.main()
+        else:
+            error_popup("le fichier work/enriched.xlsx n'existe pas\n/"
+                        "export json Impossible!"
+                        "veuillez sélectionner  l'option 'enrich' dans l'interface")
 
-    print (" TBD .. move to site GitHub (and Commit ? )")
-
+        print (" TBD .. move to site GitHub (and Commit ? )")
 
 # Create the root window
 window = tkinter.Tk()

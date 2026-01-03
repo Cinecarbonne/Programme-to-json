@@ -31,6 +31,8 @@ from tkinter import ttk as ttk
 
 # ---------- Constantes ----------
 TMDB_API_KEY = os.environ.get("TMDB_API_KEY", "").strip()
+print("API_KEY (enrich): "+os.environ.get("TMDB_API_KEY", "").strip())
+
 TMDB_BASE = "https://api.themoviedb.org/3"
 LANG_DEFAULT = "fr-FR"
 
@@ -421,12 +423,13 @@ def main(main_window=None):
     args = p.parse_args()
 
     # positionnement de mode_GUI afin de gérer  la selection des films
-    global  mode_Gui,window
+    global  mode_Gui,window,TMDB_API_KEY
 
     if (main_window ) :
         mode_Gui=True
         window=main_window
         root=Path(os.getcwd())
+        TMDB_API_KEY = os.environ.get("TMDB_API_KEY", "").strip()
     else:
         root = Path(__file__).resolve().parent
     work = root / "work"
