@@ -27,6 +27,9 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import  tkinter as tk
 from tkinter import ttk as ttk
+import name_tools as nt
+from unidecode import unidecode
+
 
 
 # ---------- Constantes ----------
@@ -218,6 +221,18 @@ def _composite(query, res):
     pop = float(res.get("popularity") or 0.0)
     return 0.65 * sim + 0.35 * pop
 
+def _director_similarity(given, proposed):
+    #normalize given director name
+    a=nt.canonicalize(given).split()
+    a.sort()
+    norm_given=unidecode(" ".join(a))
+    #normalize proposed director name
+    a = nt.canonicalize(proposed).split()
+    a.sort()
+    norm_proposed = unidecode(" ".join(a))
+    return nt.match(norm_given,norm_proposed)
+
+
 def _rank_key(query, res):
     return (_year_bucket(res), _composite(query, res))
 
@@ -236,7 +251,7 @@ def get_director_str_cached(mid: int, lang: str) -> str:
 
 
 # ---------- Sélection automatique / manuelle ----------
-def auto_pick_or_prompt(cands, title, _unused, auto_margin, *,
+def auto_pick_or_prompt(cands, title, director, _unused, auto_margin, *,
                         lang_for_director="fr-FR", force_prompt=False):
     if not cands:
         print(f"[info] Aucun résultat TMDB pour: {title}")
@@ -266,6 +281,7 @@ def auto_pick_or_prompt(cands, title, _unused, auto_margin, *,
                 directors[mid] = fut.result() or ""
             except Exception:
                 directors[mid] = ""
+
     if (not mode_Gui):
         print("\nPlusieurs correspondances pour:", title)
     else :
@@ -278,6 +294,9 @@ def auto_pick_or_prompt(cands, title, _unused, auto_margin, *,
         sim = _title_similarity(title, c)
         mid = int(c.get("id"))
         direc = directors.get(mid, "")
+        #si la comparaison du nom du realisateur depasse eun score de 0.9 on peut raisonnablement pensé qu'il s'agit du bon film
+        if _director_similarity(director,direc) >= 0.9 :
+            return short[idx-1]
         suffix = f" — {direc}" if direc else ""
         if (not mode_Gui):
             print(f"  [{idx}] {tit}{suffix} ({yy})  pop={pop:.1f}  sim={sim:.2f}")
@@ -327,22 +346,24 @@ def ensure_output_cols(df):
 
 
 def enrich_row(row, args, force_prompt=False):
+    global window
     if mode_Gui :
         window.config(cursor="watch")
     row = row.copy()
     title = (row.get("titre") or row.get("Titre") or "").strip()
+    director= (row.get("realisateur") or row.get("Realisateur") or "").strip()
     if not title:
         return row
 
     cands_fr = search_movie(title, args.lang)
-    chosen = auto_pick_or_prompt(cands_fr, title, None, args.auto_margin,
+    chosen = auto_pick_or_prompt(cands_fr, title, director, None, args.auto_margin,
                                  lang_for_director=args.lang, force_prompt=force_prompt)
     details_fr = get_movie_details(chosen["id"], args.lang) if chosen else None
 
     details_en = None
     if not details_fr:
         cands_en = search_movie(title, "en-US")
-        chosen = auto_pick_or_prompt(cands_en, title, None, args.auto_margin,
+        chosen = auto_pick_or_prompt(cands_en, title, director, None, args.auto_margin,
                                      lang_for_director="en-US", force_prompt=force_prompt)
         if chosen:
             details_en = get_movie_details(chosen["id"], "en-US")

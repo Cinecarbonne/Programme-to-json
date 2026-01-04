@@ -28,11 +28,12 @@ SHEET_NAME          = "Feuil1"
 COL_A, COL_B, COL_C = 0, 1, 2
 COL_TITRE   = 4      # E
 COL_VERSION = 5      # F
-COL_CM      = 6      # G
-COL_PRIX    = 7      # H
-COL_CATEG   = 8      # I
-COL_TARIF   = 9      # J
-COL_COMMENT = 10     # K
+COL_CM    = 6      # G
+COL_REAL      = 7      # H
+COL_PRIX    = 8      # I
+COL_CATEG   = 9      # J
+COL_TARIF   = 10     # K
+COL_COMMENT = 11     # L
 
 WEEKDAYS_FR = {"lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"}
 
@@ -229,6 +230,7 @@ def main():
         if current_date and t and titre:
             version = normalize_version(norm_str(row.get(COL_VERSION)))
             cm = norm_str(row.get(COL_CM))
+            realisateur =  norm_str(row.get(COL_REAL))
             prix = norm_str(row.get(COL_PRIX))
             categorie = norm_str(row.get(COL_CATEG))
             tarif = norm_str(row.get(COL_TARIF))
@@ -242,16 +244,13 @@ def main():
                 # Remplacer ADH par Adhérents
                 tarif = re.sub(r"\bADH\b", "Adhérents", tarif, flags=re.IGNORECASE)
 
-            # ignorer séances scolaires
-            if categorie and "SCOL" in categorie.upper():
-                continue
-
             records.append({
                 "Date": current_date.strftime("%Y-%m-%d"),
                 "Heure": f"{t.hour:02d}:{t.minute:02d}",
                 "Titre": titre,
                 "Version": version,
                 "CM": cm,
+                "Realisateur" : realisateur,
                 "Prix": prix,
                 "Categorie": categorie,
                 "Tarif": tarif,
@@ -262,7 +261,7 @@ def main():
     # export des séances
     # --------------------------------------------------------
     df = pd.DataFrame(records, columns=[
-        "Date", "Heure", "Titre", "Version", "CM",
+        "Date", "Heure", "Titre", "Version", "CM", 'Realisateur',
         "Prix", "Categorie", "Tarif", "Commentaire"
     ])
 
